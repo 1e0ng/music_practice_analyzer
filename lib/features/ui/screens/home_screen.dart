@@ -9,10 +9,14 @@ import 'package:music_practice_analyzer/features/ui/widgets/note_display.dart';
 import 'package:tflite_flutter/tflite_flutter.dart' as tflite_flutter_helper; // Import TFLite
 // import 'package:flutter_pitch_detection/flutter_pitch_detection.dart'; // Import the package - REMOVED
 
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
-}
+} // This closes HomeScreen
 
+// Then follows the existing _HomeScreenState class:
 class _HomeScreenState extends State<HomeScreen> {
   // Constants for post-processing
   static const double secondsPerFrame = 0.01; // 10ms per frame (adjust if necessary)
