@@ -208,10 +208,10 @@ class _HomeScreenState extends State<HomeScreen> {
               debugPrint('  Output tensor $i: shape=${outputTensorsMeta[i].shape}, type=${outputTensorsMeta[i].type}, name=${outputTensorsMeta[i].name}');
               // Create appropriately typed and shaped lists for outputs
               // Assuming most outputs are float32 for now. Adjust if type indicates otherwise.
-              if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.float32) {
+              if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.FLOAT32) {
                  outputs[i] = List.filled(outputTensorsMeta[i].shape.reduce((a, b) => a * b), 0.0)
                     .reshape(outputTensorsMeta[i].shape);
-              } else if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.int32) {
+              } else if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.INT32) {
                  outputs[i] = List.filled(outputTensorsMeta[i].shape.reduce((a, b) => a * b), 0)
                     .reshape(outputTensorsMeta[i].shape);
               } else {
