@@ -87,18 +87,18 @@ class _HomeScreenState extends State<HomeScreen> {
           } else {
             // Convert to Float / Normalize if int16/int24/int32
             List<List<double>> floatChannels = [];
-            if (wavFile.format == wav_package.WavFormat.int16) {
-              debugPrint('Converting Int16 to Float32');
+            if (wavFile.format == wav_package.WavFormat.pcm16bit) {
+              debugPrint('Converting PCM 16-bit to Float32');
               for (var channel in wavFile.channels) {
                 floatChannels.add(channel.map((s) => s / 32768.0).toList());
               }
-            } else if (wavFile.format == wav_package.WavFormat.int24) {
-              debugPrint('Converting Int24 to Float32');
+            } else if (wavFile.format == wav_package.WavFormat.pcm24bit) {
+              debugPrint('Converting PCM 24-bit to Float32');
                for (var channel in wavFile.channels) {
                 floatChannels.add(channel.map((s) => s / 8388608.0).toList());
               }
-            } else if (wavFile.format == wav_package.WavFormat.int32) {
-              debugPrint('Converting Int32 to Float32');
+            } else if (wavFile.format == wav_package.WavFormat.pcm32bit) {
+              debugPrint('Converting PCM 32-bit to Float32');
               for (var channel in wavFile.channels) {
                 floatChannels.add(channel.map((s) => s / 2147483648.0).toList());
               }
