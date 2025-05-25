@@ -1,24 +1,53 @@
 import 'dart:io'; // Import dart:io for File operations
 import 'dart:math'; // Import dart:math for pow
+import 'dart:typed_data'; // Import for Float32List
 import 'package:flutter/material.dart';
+import 'package:wav/wav.dart' as wav_package; // Import the wav package
 import 'package:file_picker/file_picker.dart';
 import 'package:music_practice_analyzer/features/ui/widgets/audio_visualizer.dart';
 import 'package:music_practice_analyzer/features/ui/widgets/note_display.dart';
-import 'package:flutter_pitch_detection/flutter_pitch_detection.dart'; // Import the package
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+import 'package:tflite_flutter/tflite_flutter.dart' as tflite_flutter_helper; // Import TFLite
+// import 'package:flutter_pitch_detection/flutter_pitch_detection.dart'; // Import the package - REMOVED
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Constants for post-processing
+  static const double secondsPerFrame = 0.01; // 10ms per frame (adjust if necessary)
+  static const double onsetThreshold = 0.3;
+  static const double frameThreshold = 0.3;
+  static const int numPianoKeys = 88;
+  static const int midiOffset = 21; // MIDI note for A0
+
   String? _selectedFilePath;
   bool _isAnalyzing = false;
   String? _detectedMusic;
   List<Map<String, dynamic>> _notes = [];
-  final PitchDetector _pitchDetector = PitchDetector(); // Initialize PitchDetector
+  // final PitchDetector _pitchDetector = PitchDetector(); // Initialize PitchDetector - REMOVED
+  tflite_flutter_helper.Interpreter? _interpreter;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadModel();
+  }
+
+  Future<void> _loadModel() async {
+    try {
+      _interpreter = await tflite_flutter_helper.Interpreter.fromAsset(
+        'assets/ml/onsets_frames_wavinput.tflite',
+      );
+      // _interpreter?.allocateTensors(); // Some versions might need this explicitly
+      debugPrint('TFLite model loaded successfully.');
+    } catch (e) {
+      debugPrint('Failed to load TFLite model: $e');
+      setState(() {
+        _detectedMusic = "Error: TFLite model failed to load.";
+      });
+    }
+  }
 
   Future<void> _pickAudioFile() async {
     try {
@@ -34,42 +63,190 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
         try {
-          final fileBytes = await File(_selectedFilePath!).readAsBytes(); 
-          final result = await _pitchDetector.getPitch(fileBytes); 
+          // Read WAV file
+          final wavFile = await wav_package.Wav.readFile(_selectedFilePath!);
+          debugPrint('WAV Format: ${wavFile.format}');
+          debugPrint('WAV SamplesPerSecond: ${wavFile.samplesPerSecond}');
+          debugPrint('WAV Channels: ${wavFile.channels.length}');
+          if (wavFile.channels.isNotEmpty) {
+            debugPrint('WAV Samples in first channel: ${wavFile.channels[0].length}');
+          }
 
-          if (result.isNotEmpty) {
-            // Assuming 'result' is a list of pitches with confidence and time.
-            // We need to map this to our _notes structure.
-            // This is a simplified mapping. You might need to adjust it based on
-            // the actual structure of 'result' and how you want to represent notes.
-            _notes = result.map((pitchInfo) {
-              // Example: Convert frequency to note name (this is a placeholder, actual conversion is complex)
-              String noteName = _frequencyToNote(pitchInfo['pitch']); 
-              return {
-                "note": noteName,
-                // Assuming 'time' is in seconds, adjust if it's milliseconds or another unit
-                "time": pitchInfo['time'] ?? 0.0, 
-                // Placeholder for 'correct', you might determine this based on comparison with a target melody
-                "correct": true, 
-              };
-            }).toList();
-            _detectedMusic = "Analyzed Music"; // Or derive from notes
+          // Placeholder for TFLite input
+          Float32List? tfliteInput;
+          List<double> processedSamples = [];
+
+          if (wavFile.channels.isEmpty) {
+            debugPrint('WAV file has no channels.');
+            _detectedMusic = "WAV file has no channels.";
+            _notes = [];
           } else {
-            _detectedMusic = "No pitches detected or error in analysis.";
+            // Convert to Float / Normalize if int16/int24/int32
+            List<List<double>> floatChannels = [];
+            if (wavFile.format == wav_package.WavFormat.int16) {
+              debugPrint('Converting Int16 to Float32');
+              for (var channel in wavFile.channels) {
+                floatChannels.add(channel.map((s) => s / 32768.0).toList());
+              }
+            } else if (wavFile.format == wav_package.WavFormat.int24) {
+              debugPrint('Converting Int24 to Float32');
+               for (var channel in wavFile.channels) {
+                floatChannels.add(channel.map((s) => s / 8388608.0).toList());
+              }
+            } else if (wavFile.format == wav_package.WavFormat.int32) {
+              debugPrint('Converting Int32 to Float32');
+              for (var channel in wavFile.channels) {
+                floatChannels.add(channel.map((s) => s / 2147483648.0).toList());
+              }
+            } else if (wavFile.format == wav_package.WavFormat.float32) {
+              debugPrint('Already Float32 format.');
+              floatChannels = wavFile.channels; // Already List<List<double>>
+            } else {
+              debugPrint('Unsupported WAV format for processing: ${wavFile.format}');
+              _detectedMusic = "Unsupported WAV format: ${wavFile.format}";
+              _notes = [];
+              // Set _isAnalyzing to false and return or throw to avoid further processing
+              setState(() { _isAnalyzing = false; });
+              return;
+            }
+            debugPrint('WAV Samples converted to float. Number of channels: ${floatChannels.length}');
+
+            // Mono Conversion
+            List<double> monoSamples;
+            if (floatChannels.length > 1) {
+              debugPrint('Converting to mono...');
+              monoSamples = List<double>.filled(floatChannels[0].length, 0.0);
+              for (int i = 0; i < floatChannels[0].length; i++) {
+                double sum = 0;
+                for (int j = 0; j < floatChannels.length; j++) {
+                  sum += floatChannels[j][i];
+                }
+                monoSamples[i] = sum / floatChannels.length;
+              }
+              debugPrint('Mono conversion complete. Samples: ${monoSamples.length}');
+            } else {
+              monoSamples = floatChannels[0];
+              debugPrint('Already mono. Samples: ${monoSamples.length}');
+            }
+
+            // Resampling to 16kHz
+            const int targetRate = 16000;
+            int originalRate = wavFile.samplesPerSecond;
+            List<double> resampledSamples;
+
+            if (originalRate == targetRate) {
+              debugPrint('Sample rate is already $targetRate Hz.');
+              resampledSamples = monoSamples;
+            } else {
+              debugPrint('Resampling from $originalRate Hz to $targetRate Hz...');
+              double ratio = targetRate / originalRate.toDouble();
+              int newLength = (monoSamples.length * ratio).floor();
+              resampledSamples = List<double>.filled(newLength, 0.0);
+
+              for (int j = 0; j < newLength; j++) {
+                double originalPos = j / ratio;
+                int index1 = originalPos.floor();
+                int index2 = originalPos.ceil();
+
+                if (index1 < 0) index1 = 0;
+                if (index2 >= monoSamples.length) index2 = monoSamples.length - 1;
+                if (index1 >= monoSamples.length) index1 = monoSamples.length - 1;
+
+
+                double sample1 = monoSamples[index1];
+                double sample2 = monoSamples[index2];
+                double fraction = originalPos - index1;
+
+                resampledSamples[j] = sample1 + (sample2 - sample1) * fraction;
+              }
+              debugPrint('Resampling complete. New samples: ${resampledSamples.length} at $targetRate Hz.');
+            }
+            processedSamples = resampledSamples;
+          }
+
+
+          if (processedSamples.isNotEmpty) {
+            tfliteInput = Float32List.fromList(processedSamples);
+            debugPrint('Final tfliteInput created. Length: ${tfliteInput.length}');
+
+            if (_interpreter == null) {
+              debugPrint('Interpreter not loaded, attempting to load now...');
+              await _loadModel(); // Attempt to load if not already loaded
+              if (_interpreter == null) {
+                 debugPrint('Failed to load interpreter even after retry.');
+                _detectedMusic = "Error: TFLite model could not be loaded for inference.";
+                _notes = [];
+                setState(() { _isAnalyzing = false; });
+                return;
+              }
+            }
+            
+            // Prepare Input Tensor
+            // Assuming the model expects input shape like [1, num_audio_samples]
+            // However, tflite_flutter's run method often directly accepts a compatible list for the first input.
+            // Let's ensure tfliteInput is correctly shaped if needed, or directly usable.
+            // The `run` method expects a List<Object> for inputs if there's only one input tensor.
+            // If the input tensor in the model is `[null]` or `[null, 1]` for scalar input, 
+            // or `[num_samples]` for a 1D array, tfliteInput might be directly usable.
+            // If the model expects `[1, num_samples]`, we need to wrap it:
+            var inputTensor = [tfliteInput]; // This creates a List<Float32List>
+            debugPrint('Input tensor prepared. Shape: [1, ${tfliteInput.length}]');
+
+
+            // Prepare Output Tensors dynamically
+            // _interpreter.allocateTensors(); // Ensure tensors are allocated. Often implicitly done by fromAsset.
+            // For some versions or complex models, explicit allocation might be needed after resizing inputs.
+            
+            List<tflite_flutter_helper.Tensor> outputTensorsMeta = _interpreter!.getOutputTensors();
+            Map<int, Object> outputs = {};
+            debugPrint('Model Output Tensors Meta:');
+            for (int i = 0; i < outputTensorsMeta.length; i++) {
+              debugPrint('  Output tensor $i: shape=${outputTensorsMeta[i].shape}, type=${outputTensorsMeta[i].type}, name=${outputTensorsMeta[i].name}');
+              // Create appropriately typed and shaped lists for outputs
+              // Assuming most outputs are float32 for now. Adjust if type indicates otherwise.
+              if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.float32) {
+                 outputs[i] = List.filled(outputTensorsMeta[i].shape.reduce((a, b) => a * b), 0.0)
+                    .reshape(outputTensorsMeta[i].shape);
+              } else if (outputTensorsMeta[i].type == tflite_flutter_helper.TfLiteType.int32) {
+                 outputs[i] = List.filled(outputTensorsMeta[i].shape.reduce((a, b) => a * b), 0)
+                    .reshape(outputTensorsMeta[i].shape);
+              } else {
+                 // Handle other types as needed, or log an error
+                 debugPrint("Unhandled output tensor type: ${outputTensorsMeta[i].type} for tensor $i");
+                 // Fallback to a float list, might cause issues if type is incompatible
+                 outputs[i] = List.filled(outputTensorsMeta[i].shape.reduce((a, b) => a * b), 0.0)
+                    .reshape(outputTensorsMeta[i].shape);
+              }
+            }
+            
+            debugPrint('Running TFLite inference...');
+            _interpreter!.runForMultipleInputsOutputs([inputTensor], outputs); // Pass input as List<Object>
+            debugPrint('TFLite inference complete. Output map keys: ${outputs.keys}');
+            outputs.forEach((key, value) {
+              if (value is List) {
+                debugPrint('Output tensor $key: First 10 elements: ${value.take(10).toList()}');
+              } else {
+                debugPrint('Output tensor $key: $value');
+              }
+            });
+
+            _detectedMusic = "TFLite inference ran. Raw output obtained. Check logs for details.";
+            _notes = []; // Clear previous notes, will be populated by post-processing
+            
+          } else {
+            _detectedMusic = "Audio preprocessing failed or resulted in empty samples.";
             _notes = [];
           }
 
         } catch (e) {
-          debugPrint('Error analyzing audio file: $e');
+          debugPrint('Error processing audio file: $e');
           setState(() {
-            _detectedMusic = "Error during analysis.";
+            _detectedMusic = "Error during audio processing.";
             _notes = [];
-            // _selectedFilePath = null; // Keep selected file path to allow re-try without re-picking, or clear it:
-            // _selectedFilePath = null; // Let's clear it to provide a cleaner slate after an error.
-            _isAnalyzing = false; // Ensure this is set here as well for clarity, though finally should also do it.
+            _isAnalyzing = false; 
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error analyzing audio: $e. Please try a different file.')),
+            SnackBar(content: Text('Error processing audio: $e. Please try a different file.')),
           );
         } finally {
           // This ensures _isAnalyzing is always set to false after processing,
@@ -104,9 +281,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  String _midiToNoteName(int midiNote) {
+    if (midiNote < 21 || midiNote > 108) return "Unknown"; // Standard 88-key piano range
+    const List<String> noteNames = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"];
+    // A0 is MIDI 21.
+    // Octave calculation: MIDI 21-23 are octave 0 (A0, A#0, B0)
+    // MIDI 24-35 are octave 1 (C1 to B1)
+    // etc.
+    // MIDI C4 = 60.
+    int octave;
+    if (midiNote < 24) { // A0, A#0, B0
+      octave = 0;
+    } else {
+      octave = ((midiNote - 24) ~/ 12) + 1;
+    }
+    String note = noteNames[(midiNote - 21) % 12]; // A0 is index 0 (21-21=0)
+    return '$note$octave';
+  }
+  
   // Function to convert frequency to note name - can be kept or commented out if not used
   // String _frequencyToNote(double? frequency) { ... } // Keeping it for now, as it doesn't hurt
-  // Function to convert frequency to note name
+  // Function to convert frequency to note name - Not used by TFLite transcription but kept for now
   String _frequencyToNote(double? frequency) {
     if (frequency == null) return "N/A";
 
