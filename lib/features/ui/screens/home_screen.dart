@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:music_practice_analyzer/features/ui/widgets/audio_visualizer.dart';
 import 'package:music_practice_analyzer/features/ui/widgets/note_display.dart';
-import 'package:flutter_pitch_detection/flutter_pitch_detection.dart'; // Import the package
+// import 'package:flutter_pitch_detection/flutter_pitch_detection.dart'; // Import the package
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isAnalyzing = false;
   String? _detectedMusic;
   List<Map<String, dynamic>> _notes = [];
-  final PitchDetector _pitchDetector = PitchDetector(); // Initialize PitchDetector
+  // final PitchDetector _pitchDetector = PitchDetector(); // Initialize PitchDetector
 
   Future<void> _pickAudioFile() async {
     try {
@@ -34,41 +34,47 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
         try {
-          final fileBytes = await File(_selectedFilePath!).readAsBytes();
-          final result = await _pitchDetector.getPitch(fileBytes);
+          // final fileBytes = await File(_selectedFilePath!).readAsBytes(); // Keep this if you want to read the file, but not analyze
+          // final result = await _pitchDetector.getPitch(fileBytes); // Commented out pitch detection
 
-          if (result.isNotEmpty) {
-            // Assuming 'result' is a list of pitches with confidence and time.
-            // We need to map this to our _notes structure.
-            // This is a simplified mapping. You might need to adjust it based on
-            // the actual structure of 'result' and how you want to represent notes.
-            _notes = result.map((pitchInfo) {
-              // Example: Convert frequency to note name (this is a placeholder, actual conversion is complex)
-              String noteName = _frequencyToNote(pitchInfo['pitch']); 
-              return {
-                "note": noteName,
-                // Assuming 'time' is in seconds, adjust if it's milliseconds or another unit
-                "time": pitchInfo['time'] ?? 0.0, 
-                // Placeholder for 'correct', you might determine this based on comparison with a target melody
-                "correct": true, 
-              };
-            }).toList();
-            _detectedMusic = "Analyzed Music"; // Or derive from notes
-          } else {
-            _detectedMusic = "No pitches detected or error in analysis.";
-            _notes = [];
-          }
+          // if (result.isNotEmpty) {
+          //   // Assuming 'result' is a list of pitches with confidence and time.
+          //   // We need to map this to our _notes structure.
+          //   // This is a simplified mapping. You might need to adjust it based on
+          //   // the actual structure of 'result' and how you want to represent notes.
+          //   _notes = result.map((pitchInfo) {
+          //     // Example: Convert frequency to note name (this is a placeholder, actual conversion is complex)
+          //     String noteName = _frequencyToNote(pitchInfo['pitch']); 
+          //     return {
+          //       "note": noteName,
+          //       // Assuming 'time' is in seconds, adjust if it's milliseconds or another unit
+          //       "time": pitchInfo['time'] ?? 0.0, 
+          //       // Placeholder for 'correct', you might determine this based on comparison with a target melody
+          //       "correct": true, 
+          //     };
+          //   }).toList();
+          //   _detectedMusic = "Analyzed Music"; // Or derive from notes
+          // } else {
+          //   _detectedMusic = "No pitches detected or error in analysis.";
+          //   _notes = [];
+          // }
+
+          // Placeholder after removing pitch detection
+          await Future.delayed(const Duration(seconds: 1)); // Simulate some processing time
+          _notes = [
+            {"note": "N/A", "time": 0.0, "correct": false}
+          ];
+          _detectedMusic = "Audio analysis disabled";
+
         } catch (e) {
-          debugPrint('Error analyzing audio file: $e');
+          debugPrint('Error during file processing (analysis disabled): $e');
           setState(() {
-            _detectedMusic = "Error during analysis.";
+            _detectedMusic = "Error during file processing.";
             _notes = [];
-            // _selectedFilePath = null; // Keep selected file path to allow re-try without re-picking, or clear it:
-            // _selectedFilePath = null; // Let's clear it to provide a cleaner slate after an error.
-            _isAnalyzing = false; // Ensure this is set here as well for clarity, though finally should also do it.
+            _isAnalyzing = false; 
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error analyzing audio: $e. Please try a different file.')),
+            SnackBar(content: Text('Error processing file: $e. Please try a different file.')),
           );
         } finally {
           // This ensures _isAnalyzing is always set to false after processing,
@@ -103,6 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Function to convert frequency to note name - can be kept or commented out if not used
+  // String _frequencyToNote(double? frequency) { ... } // Keeping it for now, as it doesn't hurt
   // Function to convert frequency to note name
   String _frequencyToNote(double? frequency) {
     if (frequency == null) return "N/A";
