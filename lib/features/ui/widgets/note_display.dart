@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class NoteDisplay extends StatelessWidget {
-  const NoteDisplay({super.key});
+  final List<Map<String, dynamic>> notes;
+
+  const NoteDisplay({super.key, required this.notes});
 
   @override
   Widget build(BuildContext context) {
@@ -19,26 +21,32 @@ class NoteDisplay extends StatelessWidget {
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: 10, // Placeholder count
+              itemCount: notes.length,
               itemBuilder: (context, index) {
-                final isCorrect = index % 3 != 0; // Placeholder logic
+                final noteData = notes[index];
+                final noteName = noteData['note'] as String? ?? 'N/A';
+                final noteTime = noteData['time'] as double? ?? 0.0;
+                // Placeholder for correctness, adjust as needed
+                final isCorrect = (noteData['correct'] as bool? ?? true); 
+
                 return ListTile(
                   leading: Icon(
                     isCorrect ? Icons.check_circle : Icons.error,
                     color: isCorrect ? Colors.green : Colors.red,
                   ),
                   title: Text(
-                    'Note ${index + 1}',
+                    noteName,
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   subtitle: Text(
-                    isCorrect ? 'Correct' : 'Incorrect',
+                    // You might want to display more info here, like confidence or actual frequency
+                    isCorrect ? 'Detected' : 'Possibly Incorrect', 
                     style: TextStyle(
                       color: isCorrect ? Colors.green : Colors.red,
                     ),
                   ),
                   trailing: Text(
-                    '${(index * 0.5).toStringAsFixed(1)}s',
+                    '${noteTime.toStringAsFixed(2)}s', // Display time with 2 decimal places
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 );
